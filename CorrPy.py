@@ -45,18 +45,18 @@ def GrowingWindow(step, start, stop, Profiles, delta=1, method='acf', deviation=
     and (b) is a profile number.
     """
     # Convert dimension of length to number of points.
-    deltaL = int((stop - start)//delta)
-    start = int(start//delta)
-    stop = int(stop//delta)
-    step = int(step//delta)
+    deltaL = int(np.ceil(stop - start)/delta)
+    start = int(np.ceil(start/delta))
+    stop = int(np.ceil(stop/delta))
+    step = int(np.ceil(step/delta))
 
     lenP, N = np.shape(Profiles)
     # Further, I use lenP//(int(step//delta)) because lenP is given in
     # pixels when step in the length's dimension.
     # AContainer = np.full((lenP, lenP//int(step//delta), N), np.nan)
     # IWContainer = np.full((lenP//int(step//delta), N), np.nan)
-    AContainer = np.full((lenP, deltaL//step + 1, N), np.nan)
-    IWContainer = np.full((deltaL//step + 1, N), np.nan)
+    AContainer = np.full((lenP, int(np.ceil(deltaL/step))+1, N), np.nan)
+    IWContainer = np.full((int(np.ceil(deltaL/step))+1, N), np.nan)
     for i in range(N):
         A, IW = loopOverProfileLength(step, start, stop,
                                       Profiles[:,i], method=method,
@@ -107,10 +107,10 @@ def loopOverProfileLength(step, start, stop, profile, method='acf', deviation='s
     deltaL = int(stop - start)
                  
     profile = profile[~np.isnan(profile)] #Clean out NaN's form the profiles
-    AContainer = np.full((len(profile), deltaL//step + 1), np.nan)
-    IWContainer = np.full((deltaL//step) + 1, np.nan)
+    AContainer = np.full((len(profile), int(np.ceil(deltaL/step))+1), np.nan)
+    IWContainer = np.full(int(np.ceil(deltaL/step))+1, np.nan)
     # for i, j in zip(range(step, len(profile), step), range(len(profile)//step)):
-    for i, j in zip(range(start, stop + step, step), range(deltaL//step + 1)):
+    for i, j in zip(range(start, stop + step, step), range(int(np.ceil(deltaL/step)) + 1)):
         profilePart = profile[0:i]
         # profilePart = profilePart - SVRTrend(profilePart, method="linear")
         
