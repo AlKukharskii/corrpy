@@ -6,15 +6,17 @@ from statsmodels.tsa.stattools import acf
 from scipy.stats import median_abs_deviation as mad
 from scipy.ndimage import gaussian_filter1d
 from scipy.special import gamma, kv
-from scipy.sparse import csr_array, diags
+from scipy.sparse import coo_array, diags, csr_array
 from scipy.linalg import toeplitz
 from scipy.optimize import curve_fit
+from scipy.sparse.linalg import splu
 
 from sklearn.svm import SVR
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import HuberRegressor
 from sklearn.model_selection import train_test_split
 # from sklearn.metrics import mean_squared_error as mse
+# import sys
 
 # Definitions of used variables.
 
@@ -499,7 +501,18 @@ def spToepliz(mainDiag, colVals, rawVals, colIndex, rawIndex, N):
     """
     Vals = np.concatenate(([mainDiag], colVals, rawVals))
     Index = np.concatenate(([0], colIndex, rawIndex))
-    return diags(Vals, Index, shape=(N, N))
+    return diags(Vals, Index, shape=(N, N), format='csc')
+
+def sparse_cholesky(A): # The input matrix A must be a sparse symmetric positive-definite.
+  """
+  Description:
+  Compute sparse Cholesky decomposition.
+  """
+#   https://gist.github.com/omitakahiro/c49e5168d04438c5b20c921b928f1f5d
+  
+  LU = splu(A,diag_pivot_thresh=0) # sparse LU decomposition
+  return LU.L.dot(diags(LU.U.diagonal()**(0.5))).transpose() #the problem in performance is here
+  
 
 Generator = np.random.default_rng()
 
@@ -529,16 +542,23 @@ def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
     else:
         A = exponentialModel(r, xi, alpha)
 
+    lenA = len(A)
+
     for index, item in enumerate(A):
         if item < 10**-5:
             A[index:] = 0
-    
-    # C = spToepliz(1, A[1:index], A[1:index], 
-    #               np.linspace(1, index-1, index-1, dtype=np.int16), -np.linspace(1, index-1, index-1, dtype=np.int16), len(A))
-    # C = toeplitz(A)
+            break
+
+    # Aindx = A[1:index]
+    # A = coo_array(A)
+    # indexs = np.linspace(1, index-1, index-1, dtype=np.int16)
+    # C = spToepliz(1, Aindx, Aindx, indexs, -indexs, lenA)
+    # L = sparse_cholesky(C)
+
     L = csr_array(np.linalg.cholesky(toeplitz(A)))
-    # L = csr_array(L)
+
     # return oneOverExp(delta, A), L @ np.random.normal(0, omega, size=(int(round(length/delta, 0)), N))
+    # return oneOverExp(delta, np.insert(Aindx,0,1)), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
     return oneOverExp(delta, A), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
 
 def exponentialModel(r, xi=10, alpha=0.5):
