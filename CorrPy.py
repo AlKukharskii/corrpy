@@ -15,6 +15,8 @@ from sklearn.svm import SVR
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import HuberRegressor
 from sklearn.model_selection import train_test_split
+
+from sksparse.cholmod import cholesky
 # from sklearn.metrics import mean_squared_error as mse
 # import sys
 
@@ -503,15 +505,15 @@ def spToepliz(mainDiag, colVals, rawVals, colIndex, rawIndex, N):
     Index = np.concatenate(([0], colIndex, rawIndex))
     return diags(Vals, Index, shape=(N, N), format='csc')
 
-def sparse_cholesky(A): # The input matrix A must be a sparse symmetric positive-definite.
-  """
-  Description:
-  Compute sparse Cholesky decomposition.
-  """
-#   https://gist.github.com/omitakahiro/c49e5168d04438c5b20c921b928f1f5d
+# def sparse_cholesky(A): # The input matrix A must be a sparse symmetric positive-definite.
+#   """
+#   Description:
+#   Compute sparse Cholesky decomposition.
+#   """
+# #   https://gist.github.com/omitakahiro/c49e5168d04438c5b20c921b928f1f5d
   
-  LU = splu(A,diag_pivot_thresh=0) # sparse LU decomposition
-  return LU.L.dot(diags(LU.U.diagonal()**(0.5))).transpose() #the problem in performance is here
+#   LU = splu(A,diag_pivot_thresh=0) # sparse LU decomposition
+#   return LU.L.dot(diags(LU.U.diagonal()**(0.5))).transpose() #the problem in performance is here
   
 
 Generator = np.random.default_rng()
@@ -542,7 +544,7 @@ def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
     else:
         A = exponentialModel(r, xi, alpha)
 
-    lenA = len(A)
+    # lenA = len(A)
 
     for index, item in enumerate(A):
         if item < 10**-5:
@@ -553,11 +555,10 @@ def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
     # A = coo_array(A)
     # indexs = np.linspace(1, index-1, index-1, dtype=np.int16)
     # C = spToepliz(1, Aindx, Aindx, indexs, -indexs, lenA)
-    # L = sparse_cholesky(C)
-
+    # L = cholesky(C, ordering_method='natural').L()
+    
     L = csr_array(np.linalg.cholesky(toeplitz(A)))
 
-    # return oneOverExp(delta, A), L @ np.random.normal(0, omega, size=(int(round(length/delta, 0)), N))
     # return oneOverExp(delta, np.insert(Aindx,0,1)), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
     return oneOverExp(delta, A), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
 
