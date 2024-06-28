@@ -280,8 +280,8 @@ def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
     """
     H = H[~np.isnan(H)]
     if len(H) != 0:
-        pos = np.where(H >= np.sqrt(1-1/2.71))
-        # pos=np.where(H >= 2/3*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
+        # pos = np.where(H >= np.sqrt(1-1/2.71))
+        pos=np.where(H >= 2/3*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
         H = H[1:pos[0][1]+1]
         X = delta*np.linspace(1, len(H), len(H))
 
@@ -544,23 +544,23 @@ def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
     else:
         A = exponentialModel(r, xi, alpha)
 
-    # lenA = len(A)
+    lenA = len(A)
 
     for index, item in enumerate(A):
-        if item < 10**-5:
+        if item < 10**-4:
             A[index:] = 0
             break
 
-    # Aindx = A[1:index]
-    # A = coo_array(A)
-    # indexs = np.linspace(1, index-1, index-1, dtype=np.int16)
-    # C = spToepliz(1, Aindx, Aindx, indexs, -indexs, lenA)
-    # L = cholesky(C, ordering_method='natural').L()
+    Aindx = A[1:index]
+    A = coo_array(A)
+    indexs = np.linspace(1, index-1, index-1, dtype=np.int16)
+    C = spToepliz(1, Aindx, Aindx, indexs, -indexs, lenA)
+    L = cholesky(C, ordering_method='natural').L()
     
-    L = csr_array(np.linalg.cholesky(toeplitz(A)))
+    # L = csr_array(np.linalg.cholesky(toeplitz(A)))
 
-    # return oneOverExp(delta, np.insert(Aindx,0,1)), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
-    return oneOverExp(delta, A), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
+    return oneOverExp(delta, np.insert(Aindx,0,1)), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
+    # return oneOverExp(delta, A), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
 
 def exponentialModel(r, xi=10, alpha=0.5):
     '''
