@@ -10,6 +10,7 @@ from scipy.sparse import coo_array, diags, csr_array
 from scipy.linalg import toeplitz
 from scipy.optimize import curve_fit
 from scipy.sparse.linalg import splu
+from scipy.interpolate import Akima1DInterpolator
 
 from sklearn.svm import SVR
 from sklearn.linear_model import LinearRegression
@@ -117,7 +118,7 @@ def loopOverProfileLength(step, start, stop, profile, method='acf', deviation='s
     for i, j in zip(range(start, stop + step, step), range(int(np.ceil(deltaL/step)) + 1)):
         profilePart = profile[0:i]
         # profilePart = profilePart - SVRTrend(profilePart, method="linear")
-        
+        # print(len(profilePart))
         A = statFunc(profilePart, nlags = len(profilePart))
         # A = acfMed(profilePart)
 
@@ -280,24 +281,56 @@ def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
     """
     H = H[~np.isnan(H)]
     if len(H) != 0:
-        # pos = np.where(H >= np.sqrt(1-1/2.71))
-        pos=np.where(H >= 2/3*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
-        H = H[1:pos[0][1]+1]
-        X = delta*np.linspace(1, len(H), len(H))
+        pos = np.where(H >= np.sqrt(1-1/2.71))
+        # pos=np.where(H >= 2/3*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
 
-        # X_train, X_test, y_train, y_test = train_test_split(X, H, shuffle=False, test_size=0.1)
+        # H = H[0:2*pos[0][1]]
+        # X = delta*np.linspace(0, len(H), len(H))
 
-        if robust is True:
-            try:
-                reg = HuberRegressor(epsilon=epsilon, max_iter=max_iter, alpha=alpha).fit(np.log(X.reshape(-1,1)), np.log(H))
-            except ValueError:
-                reg = LinearRegression(n_jobs=1).fit(np.log(X.reshape(-1,1)), np.log(H)) 
-        else:
-            reg = LinearRegression(n_jobs=1).fit(np.log(X.reshape(-1,1)), np.log(H))
+        # X, H = fitData(delta, X, H, 2*len(H))
 
-        return reg.coef_[0]
+        # X, X_test, H, y_test = train_test_split(X, H,shuffle=True,
+        #                                         test_size=0.25)
+        
+        
+        pos=np.where(H >= .25*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
+        H = H[0:pos[0][1]]
+        # X = X[0:pos[0][1]]
+        X = delta*np.linspace(0, len(H), len(H))
+        # print(len(H))
+        # X, X_test, H, y_test = train_test_split(X, H,shuffle=True,
+        #                                         test_size=0.2)
+
+        popt, pcov = curve_fit(powerlaw, X, H, (0.1, 0.5))
+        # popt, pcov = curve_fit(exponentialModel, X, H, (0.1, 0.5))
+        return popt[1]
+
+        # if robust is True:
+        #     try:
+        #         reg = HuberRegressor(epsilon=epsilon, max_iter=max_iter, alpha=alpha, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H))
+        #     except ValueError:
+        #         reg = LinearRegression(n_jobs=1, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H)) 
+        # else:
+        #     reg = LinearRegression(n_jobs=1, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H))
+
+        # return reg.coef_[0]
     else:
         return np.nan
+    
+def fitData(delta, X, Y, interpPoints=100):
+    """
+    A supporting function for fast fitting.
+    """
+    XInt = delta*np.linspace(0, len(Y), interpPoints)
+    YInt = Akima1DInterpolator(X, Y, method="makima")(XInt)
+    # YInt = np.interp(XInt, X, Y) #Linear interpolation
+    return XInt, YInt
+
+def powerlaw(x, a, b):
+    """
+    Fit a power-law.
+    """
+    return a*pow(x,b)
 
 # In progress
 def exponentialFitCL(delta, A, *args, **kwargs):
@@ -494,6 +527,7 @@ def SVRTrend(profile, method="SVR"):
 
     SRegr.fit(X_train, y_train)
     return SRegr.predict(X)
+
 
 # Define sparce Toepliz matrix
 def spToepliz(mainDiag, colVals, rawVals, colIndex, rawIndex, N):
