@@ -303,7 +303,10 @@ def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
 
         popt, pcov = curve_fit(powerlaw, X, H, (0.1, 0.5))
         # popt, pcov = curve_fit(exponentialModel, X, H, (0.1, 0.5))
-        return popt[1]
+        if pcov[0][0] == np.inf:
+            return np.nan
+        else:
+            return popt[1]
 
         # if robust is True:
         #     try:
