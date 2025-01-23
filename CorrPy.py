@@ -16,10 +16,23 @@ from sklearn.svm import SVR
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import HuberRegressor
 from sklearn.model_selection import train_test_split
+from piecewise_regression import Fit as pw
 
 from sksparse.cholmod import cholesky
 # from sklearn.metrics import mean_squared_error as mse
 # import sys
+
+# Define global variables
+# Define a constant to recalculate median absolute deviation to standard deviation
+const = 1.4826 
+
+# Generator = np.random.default_rng()
+
+class Analyse:
+    def __init__(self, Profiles, delta) -> None:
+        pass
+
+
 
 # Definitions of used variables.
 
@@ -131,7 +144,7 @@ def loopOverProfileLength(step, start, stop, profile, method='acf', deviation='s
     return AContainer, IWContainer
 
 
-def correlationLength(delta, A):
+def correlationLength(delta, A, *args, **kwargs):
     """
     Description:
     This function calculates the correlation length an abscissa
@@ -165,8 +178,8 @@ def correlationLength(delta, A):
         return corrLength
     
 
-def selfAffineParameters(delta, statFunction, method='corrLength',
-                         epsilon=1.05, max_iter=1000, alpha=0.01, robust=True):
+def selfAffineParameters(delta, statFunction, method='corrLength', *args, **kwargs):
+                         #epsilon=1.05, max_iter=1000, alpha=0.01, robust=True):
     """
     Description:
     This function estimates the self-affine exponent or
@@ -212,17 +225,19 @@ def selfAffineParameters(delta, statFunction, method='corrLength',
         param = np.full((lenS, N), np.nan)
         for i in range(lenS):
             for j in range(N):
-                param[i,j] = estimator(delta, statFunction[:, i, j],
-                                       epsilon=epsilon, max_iter=max_iter,
-                                       alpha=alpha, robust=robust)
+                # param[i,j] = estimator(delta, statFunction[:, i, j],
+                #                        epsilon=epsilon, max_iter=max_iter,
+                #                        alpha=alpha, robust=robust)
+                param[i,j] = estimator(delta, statFunction[:, i, j], *args, **kwargs)
         return param
     elif statFunctiondim == 2:
         lenP, lenS = np.shape(statFunction)
         param = np.full((lenS), np.nan)
         for i in range(lenS):
-            param[i] = estimator(delta, statFunction[:, i],
-                                 epsilon=epsilon, max_iter=max_iter,
-                                 alpha=alpha, robust=robust)
+            # param[i] = estimator(delta, statFunction[:, i],
+            #                      epsilon=epsilon, max_iter=max_iter,
+            #                      alpha=alpha, robust=robust)
+            param[i] = estimator(delta, statFunction[:, i], *args, **kwargs)
         return param
     
 def oneOverExp(delta, A, *args, **kwargs):
@@ -258,7 +273,7 @@ def oneOverExp(delta, A, *args, **kwargs):
 
     
 def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
-                       max_iter=1000, alpha=0.01):
+                       max_iter=1000, alpha=0.01, cut_off=0.45, *args, **kwargs):
     """
     Description:
     This function estimates the self-affine exponent.
@@ -281,23 +296,12 @@ def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
     """
     H = H[~np.isnan(H)]
     if len(H) != 0:
-        pos = np.where(H >= np.sqrt(1-1/2.71))
-        # pos=np.where(H >= 2/3*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
-
-        # H = H[0:2*pos[0][1]]
-        # X = delta*np.linspace(0, len(H), len(H))
-
-        # X, H = fitData(delta, X, H, 2*len(H))
-
-        # X, X_test, H, y_test = train_test_split(X, H,shuffle=True,
-        #                                         test_size=0.25)
-        
-        
-        pos=np.where(H >= .25*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
+        # Find where to cut the curve and cut it.
+        pos = np.where(H >= cut_off*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
         H = H[0:pos[0][1]]
-        # X = X[0:pos[0][1]]
+        # Generate the length scale
         X = delta*np.linspace(0, len(H), len(H))
-        # print(len(H))
+    
         # X, X_test, H, y_test = train_test_split(X, H,shuffle=True,
         #                                         test_size=0.2)
 
@@ -307,6 +311,8 @@ def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
             return np.nan
         else:
             return popt[1]
+
+        # The next part is under development. Robust fitting of alpha.
 
         # if robust is True:
         #     try:
@@ -478,7 +484,7 @@ def acfNaive(profile, nlags=None):
     return acfContainer
     
 
-def subtractTrend(size, Profiles, method='SVR'):
+def subtractTrend(size, Profiles, method='SVR', test_size=0.7):
     """
     Description:
     This function subtracts the profile's trend via the
@@ -490,6 +496,7 @@ def subtractTrend(size, Profiles, method='SVR'):
     more details see scipy.ndimage.gaussian_filter.
     :Profiles is a (a, b) matrix which contains studying
     profiles.
+    :test_size sets the size of the train-test split.
 
     Return:
     :PWithoutTrend returns profiles without trend.
@@ -502,35 +509,80 @@ def subtractTrend(size, Profiles, method='SVR'):
         if method.lower() in ['gauss', 'gaussian', 'gaussian_filter']:
             profileWT = profile - gaussian_filter1d(profile, sigma=size)
         else:
-            profileWT = profile - SVRTrend(profile, method)
+            profileWT = profile - SVRTrend(profile, method, test_size)
 
         PWithoutTrend[0:len(profileWT), i] = profileWT
     return PWithoutTrend
 
 
-def SVRTrend(profile, method="SVR"):
+def SVRTrend(profile, method="SVR", test_size=0.7):
     """
     Description:
     This function subtracts a profile's trend with the non-linear or linear fit.
 
     Parameters:
     :profile is an input profile.
+    :method sets the used method. Choose between SVR and linear regression (OLS).
+    :test_size sets the size of the train-test split.
 
     Return:
     :SRegr.predict(X) returns the profile's trend.
     """
-    X = np.linspace(0, len(profile) -1, len(profile)).reshape(-1, 1)
+    X = np.linspace(0, len(profile) -1, len(profile))#.reshape(-1, 1)
     X_train, X_test, y_train, y_test = train_test_split(X, profile,
-                                                        shuffle=True, test_size=0.3)
+                                                        shuffle=True, test_size=test_size)
+
     if method.lower() in ['svr']:
         SRegr = SVR(kernel='rbf')
+        SRegr.fit(X_train, y_train)
+        y = SRegr.predict(X)
     else:
-        SRegr = LinearRegression(n_jobs=-1)
+        BIC = model_selection(X_train, X_test, y_train, y_test, range(1, 4))
+        n = min(BIC, key=BIC.get)
+        SRegr = pw(X_train, y_train, n_breakpoints=n if n.is_integer() else 1)
+        y = SRegr.predict(X)
+
+        try:
+            _ = profile - y
+        except:
+            SRegr = SVR(kernel='rbf', C=0.1)
+            SRegr.fit(X_train.reshape(-1, 1), y_train)
+            y = SRegr.predict(X.reshape(-1, 1))
+
+        # SRegr = LinearRegression(n_jobs=-1)
         # SRegr = HuberRegressor()
 
-    SRegr.fit(X_train, y_train)
-    return SRegr.predict(X)
+    # SRegr.fit(X_train, y_train)
+    return y
 
+
+def bayesian_information_criterion(x, std, n_breakpoints):
+        """
+        Calculates the Bayesian Information Criterion of a piecewise
+        linear model.
+        """
+        n = len(x)  # No. data points
+        k = 2 + 2 * n_breakpoints  # No. model parameters
+        return n * np.log(std**2) + k * np.log(n)
+
+
+def model_selection(X_train, X_test, y_train, y_test, param):
+    BIC = {}
+
+    for n in param:
+        # print('n: ', n)
+        try:
+            pw_fit = pw(X_train, y_train, n_breakpoints=n)
+
+            y = pw_fit.predict(X_test)
+            error = np.abs(y - y_test)
+            std = const*mad(error)
+            bic = bayesian_information_criterion(X_test, std, n)
+        except:
+            bic = np.inf
+
+        BIC[n] = bic
+    return BIC
 
 # Define sparce Toepliz matrix
 def spToepliz(mainDiag, colVals, rawVals, colIndex, rawIndex, N):
@@ -541,22 +593,12 @@ def spToepliz(mainDiag, colVals, rawVals, colIndex, rawIndex, N):
     Vals = np.concatenate(([mainDiag], colVals, rawVals))
     Index = np.concatenate(([0], colIndex, rawIndex))
     return diags(Vals, Index, shape=(N, N), format='csc')
+ 
 
-# def sparse_cholesky(A): # The input matrix A must be a sparse symmetric positive-definite.
-#   """
-#   Description:
-#   Compute sparse Cholesky decomposition.
-#   """
-# #   https://gist.github.com/omitakahiro/c49e5168d04438c5b20c921b928f1f5d
-  
-#   LU = splu(A,diag_pivot_thresh=0) # sparse LU decomposition
-#   return LU.L.dot(diags(LU.U.diagonal()**(0.5))).transpose() #the problem in performance is here
-  
-
-Generator = np.random.default_rng()
+# Generator = np.random.default_rng()
 
 def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
-                     model='exp'):
+                     model='exp', randomTrend=False, splitPos=0.5, coeffWidth=12.5, numberOfSplits=2):
     """ 
     Description:
     This function generates a set of random correlated profiles.
@@ -575,12 +617,15 @@ def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
     Return:
     :Returns a set of random correlated profiles.
     """
+    Generator = np.random.default_rng()
+
     r = np.linspace(0, length-1, num = int(round(length/delta, 0)))
     if model.lower() in ['k', 'kcorr']:
         A = KCorrModel(r, xi, alpha)
     else:
         A = exponentialModel(r, xi, alpha)
 
+    # Need to use scisparse
     lenA = len(A)
 
     for index, item in enumerate(A):
@@ -593,11 +638,45 @@ def profileGenerator(alpha=0.5, omega=1, xi=10, delta=1, length=1000, N=100,
     indexs = np.linspace(1, index-1, index-1, dtype=np.int16)
     C = spToepliz(1, Aindx, Aindx, indexs, -indexs, lenA)
     L = cholesky(C, ordering_method='natural').L()
-    
-    # L = csr_array(np.linalg.cholesky(toeplitz(A)))
+    Profiles = L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
 
-    return oneOverExp(delta, np.insert(Aindx,0,1)), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
-    # return oneOverExp(delta, A), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
+    # Do not need to use scisparse
+    # L = csr_array(np.linalg.cholesky(toeplitz(A)))
+    # Profiles = oneOverExp(delta, A), L @ Generator.normal(0, omega, size=(int(round(length/delta, 0)), N))
+    
+    if randomTrend:
+        Profiles = addRandomTrend(Profiles, r, delta, length, N, splitPos, coeffWidth, numberOfSplits)
+    return oneOverExp(delta, np.insert(Aindx,0,1)), Profiles
+
+def addRandomTrend(Profiles, r, delta=1, length=1000, N=100, splitPos=0.5, coeffWidth=12.5, numberOfSplits=2):
+    """
+    Description:
+    This function add random linear trends to the given profiles.
+
+    Parameters:
+    :Profiles
+
+    Return:
+    It returns profiles with added random linear trends.
+    """
+    Generator = np.random.default_rng()
+    # splitPos = np.linspace()
+    # splitPoints = 
+
+    if numberOfSplits == 2:
+        # Generate random splits
+        splitPoints = np.array([*map(int, Generator.normal(splitPos*length, length/50, size=(N, numberOfSplits-1))/delta)])
+        # Generate random coefs
+        coeff = Generator.normal(0, coeffWidth/length, size=(numberOfSplits, N))
+
+        for k1, k2, n, i in zip(coeff[0,:], coeff[1,:], splitPoints, range(0, N)):
+            y = k1*r
+            # y[n:] = -k1*r[n:] + 2*k1*r[n]
+            y[n:] = -k2*r[n:] + (k1*r[n] + k2*r[n])
+            Profiles[:, i] = Profiles[:, i] + y
+    
+    return Profiles
+
 
 def exponentialModel(r, xi=10, alpha=0.5):
     '''
@@ -635,5 +714,9 @@ def KCorrModel(r, xi=10, alpha=0.5):
     return A
 
 def errorRel(val, refVal):
+    """
+    Description:
+    Calculates the relative error between val and refVal.
+    """
     return np.abs(val - refVal)/refVal
     
