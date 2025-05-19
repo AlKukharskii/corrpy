@@ -1,10 +1,12 @@
 # CorrPy
 import numpy as np
 
+from numpy.lib.stride_tricks import sliding_window_view as slidingWindow
+
 from statsmodels.tsa.stattools import acf
 
 from scipy.stats import median_abs_deviation as mad
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d, median_filter
 from scipy.special import gamma, kv
 from scipy.sparse import coo_array, diags, csr_array
 from scipy.linalg import toeplitz
@@ -28,16 +30,230 @@ const = 1.4826
 
 # Generator = np.random.default_rng()
 
-class Analyse:
-    def __init__(self, Profiles, delta) -> None:
-        pass
+# class Analyse:
+#     def __init__(self, Profiles, delta) -> None:
+#         pass
 
 
 
 # Definitions of used variables.
+def loopOverProfileMWLIN(step, deltaMin, deltaMax, profile, method='acf', deviation='std'):
+    # Everything comes in points
+    # Moving window
+    """
+    Description:
+    This function iterates over profile's length-scale.
 
-# Should add delta here.
-def GrowingWindow(step, start, stop, Profiles, delta=1, method='acf', deviation='std'):
+    Parameters:
+    :step is a distance between two calculated profiles
+    in number of points.
+    :start is a length scale to strat calculations, [points].
+    :deltaMax is a length scalw at which to deltaMax, [points].
+    :profile is a studying profile.
+    :method is a switcher between the autocorrelation and
+    Hurst functions.
+
+    Return:
+    :AContainer returns calculated statistical function.
+    :IWContainer returns calculated interface width.
+    """
+
+    if method.lower() in ['acfhuber', 'huber']:
+        statFunc = acfHuber
+    elif method.lower() in ['med', 'median', 'acfmed', 'acfmedian']:
+        statFunc = acfMed
+    elif method.lower() in ['acfnaive', 'naive']:
+        statFunc = acfNaive
+    else:
+        statFunc = acf
+        
+    if deviation.lower() in ['mad']:
+        devFunc = mad
+    else:
+        devFunc = np.std
+
+    # It should return A[lenP, deltaLen, initialPoint]
+    # lenP = len(profile) (lag)
+    # deltaLen = len(range(deltaMin, deltaMax, step))
+    # initialPoint = lenP - deltaMin (i.e. it is a number of instances)
+
+    # in number of points
+                         
+    profile = profile[~np.isnan(profile)] #Clean out NaN's form the profiles
+    if deltaMin > len(profile):
+        deltaMin = len(profile) - 10
+        AContainer = np.full((len(profile), len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+        IWContainer = np.full((len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+        # print('Done')
+        return AContainer, IWContainer
+    
+    AContainer = np.full((len(profile), len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+    IWContainer = np.full((len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+    # print('A.shape: ', AContainer.shape)
+    # print('IW.shape: ', IWContainer.shape)
+
+    
+    for indxDelta, delta in enumerate(range(deltaMin, deltaMax, step)):
+        # This loop goes over all delta.
+        if delta > len(profile):
+            break
+
+        profileFrames = slidingWindow(profile, delta)
+        
+        profileFrames = subtractTrend(size=1, Profiles=profileFrames, method='SVR', test_size=0.5)
+        
+        for indxFrame, profilePart in enumerate(profileFrames):
+            # This loop goes over all windows of a single profile.
+            A = statFunc(profilePart, nlags = len(profilePart))   
+
+            IWContainer[indxDelta, indxFrame] = devFunc(profilePart)
+        
+            if method.lower() in ['hurst']:
+                A = IWContainer[indxDelta, indxFrame]*np.sqrt(2*(1-A))
+                
+            AContainer[0:len(A), indxDelta, indxFrame] = A
+    
+    return AContainer, IWContainer
+
+
+def loopOverProfileMW(step, deltaMin, deltaMax, profile, method='acf', deviation='std'):
+    # Everything comes in points
+    # Moving window
+    """
+    Description:
+    This function iterates over profile's length-scale.
+
+    Parameters:
+    :step is a distance between two calculated profiles
+    in number of points.
+    :start is a length scale to strat calculations, [points].
+    :deltaMax is a length scalw at which to deltaMax, [points].
+    :profile is a studying profile.
+    :method is a switcher between the autocorrelation and
+    Hurst functions.
+
+    Return:
+    :AContainer returns calculated statistical function.
+    :IWContainer returns calculated interface width.
+    """
+
+    if method.lower() in ['acfhuber', 'huber']:
+        statFunc = acfHuber
+    elif method.lower() in ['med', 'median', 'acfmed', 'acfmedian']:
+        statFunc = acfMed
+    elif method.lower() in ['acfnaive', 'naive']:
+        statFunc = acfNaive
+    else:
+        statFunc = acf
+        
+    if deviation.lower() in ['mad']:
+        devFunc = mad
+    else:
+        devFunc = np.std
+
+    # It should return A[lenP, deltaLen, initialPoint]
+    # lenP = len(profile) (lag)
+    # deltaLen = len(range(deltaMin, deltaMax, step))
+    # initialPoint = lenP - deltaMin (i.e. it is a number of instances)
+
+    # in number of points
+                         
+    profile = profile[~np.isnan(profile)] #Clean out NaN's form the profiles
+    
+    if deltaMin > len(profile):
+        deltaMin = len(profile) - 10
+        AContainer = np.full((len(profile), len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+        IWContainer = np.full((len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+        # print('Done')
+        return AContainer, IWContainer
+    
+    AContainer = np.full((len(profile), len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+    IWContainer = np.full((len(range(deltaMin, deltaMax, step)),  len(profile) - deltaMin + 1), np.nan)
+    # print('A.shape: ', AContainer.shape)
+    # print('IW.shape: ', IWContainer.shape)
+
+    
+    for indxDelta, delta in enumerate(range(deltaMin, deltaMax, step)):
+        # This loop goes over all delta.
+        if delta > len(profile):
+            break
+
+        profileFrames = slidingWindow(profile, delta)
+        # print(profileFrames.shape)
+        
+        for indxFrame, profilePart in enumerate(profileFrames):
+            # This loop goes over all windows of a single profile.
+            A = statFunc(profilePart, nlags = len(profilePart))   
+
+            IWContainer[indxDelta, indxFrame] = devFunc(profilePart)
+        
+            if method.lower() in ['hurst']:
+                A = IWContainer[indxDelta, indxFrame]*np.sqrt(2*(1-A))
+                
+            AContainer[0:len(A), indxDelta, indxFrame] = A
+    
+    return AContainer, IWContainer
+
+
+def MovingWindow(step, deltaMin, deltaMax, Profiles, delta=1, method='acf', deviation='std'):
+    """ 
+    Description:
+    This function realises the growing window method.
+    
+    Parameters:
+    :step is a distance between two calculated profiles
+    in length scale, [m].
+    :deltaMin is a length scale to strat calculations, [m].
+    :deltaMax is a length scalw at which to deltaMax, [m].
+    :Profiles is a (a, b) matrix which contains studying
+    profiles.
+    :delta is equal to discretization. It is determined as delta = L/n
+    where, L is profile's length and n is a number of points.
+    :method is a switcher between the autocorrelation and
+    Hurst functions.
+
+    Return:
+    :AContainer returns calculated statistical function.
+    It has a shape (a, b, c) where (a) is a lag, (b) is
+    a profile's length, and (c) is a profile number.
+    :IWContainer returns calculated interface width.
+    It has a shape (a, b) where (a) is a profile's length,
+    and (b) is a profile number.
+    """
+    # It should return A[lenP, deltaLen, InitialPoint, N]
+    # lenP = len(profile) (lag)
+    # deltaLen = len(range(deltaMin, deltaMax, step))
+    # initialPoint = lenP - deltaMin (i.e. it is a number of instances)
+    # N is a number of profiles
+
+    # Convert dimension of length to number of points.
+    deltaMin = int(np.ceil(deltaMin/delta))
+    deltaMax = int(np.ceil(deltaMax/delta))
+    step = int(np.ceil(step/delta))
+
+    lenP, N = np.shape(Profiles)
+    # Further, I use lenP//(int(step//delta)) because lenP is given in
+    # pixels when step in the length's dimension.
+
+    AContainer = np.full((lenP, len(range(deltaMin, deltaMax, step)),  lenP - deltaMin + 1, N), np.nan)
+    IWContainer = np.full((len(range(deltaMin, deltaMax, step)),  lenP - deltaMin + 1, N), np.nan)
+    for i in range(N):
+        # This loop goes over all profiles.
+        A, IW = loopOverProfileMW(step, deltaMin, deltaMax,
+                                      Profiles[:,i], method=method,
+                                      deviation=deviation)
+        
+        lenA, lenStep, lenP = A.shape
+        
+        AContainer[0:lenA, 0:lenStep, 0:lenP, i] = A
+
+        IWContainer[0:lenStep, 0:lenP, i] = IW
+        
+    return AContainer, IWContainer
+
+
+def GrowingWindow(step, start, stop, Profiles, delta=1, method='acf', deviation='std',
+                  reduced=False):
     """ 
     Description:
     This function realises the growing window method.
@@ -62,6 +278,11 @@ def GrowingWindow(step, start, stop, Profiles, delta=1, method='acf', deviation=
     It has a shape (a, b) where (a) is a profile's length,
     and (b) is a profile number.
     """
+    if reduced:
+        iterator = loopOverProfileMW
+    else:
+        iterator = loopOverProfileLength
+
     # Convert dimension of length to number of points.
     deltaL = int(np.ceil(stop - start)/delta)
     start = int(np.ceil(start/delta))
@@ -76,9 +297,16 @@ def GrowingWindow(step, start, stop, Profiles, delta=1, method='acf', deviation=
     AContainer = np.full((lenP, int(np.ceil(deltaL/step))+1, N), np.nan)
     IWContainer = np.full((int(np.ceil(deltaL/step))+1, N), np.nan)
     for i in range(N):
-        A, IW = loopOverProfileLength(step, start, stop,
+        # A, IW = loopOverProfileLength(step, start, stop,
+        #                               Profiles[:,i], method=method,
+        #                               deviation=deviation)
+        A, IW = iterator(step, start, stop,
                                       Profiles[:,i], method=method,
                                       deviation=deviation)
+        
+        if reduced:
+            A = np.nanmedian(A, -1)
+            IW = np.nanmedian(IW, -1)
         
         lenA, lenStep = np.shape(A)
 
@@ -123,23 +351,30 @@ def loopOverProfileLength(step, start, stop, profile, method='acf', deviation='s
 
     # in number of points
     deltaL = int(stop - start)
-                 
+                     
     profile = profile[~np.isnan(profile)] #Clean out NaN's form the profiles
+    
     AContainer = np.full((len(profile), int(np.ceil(deltaL/step))+1), np.nan)
     IWContainer = np.full(int(np.ceil(deltaL/step))+1, np.nan)
     # for i, j in zip(range(step, len(profile), step), range(len(profile)//step)):
     for i, j in zip(range(start, stop + step, step), range(int(np.ceil(deltaL/step)) + 1)):
+        if i > len(profile):
+            break
+
         profilePart = profile[0:i]
+        
         # profilePart = profilePart - SVRTrend(profilePart, method="linear")
-        # print(len(profilePart))
+        
         A = statFunc(profilePart, nlags = len(profilePart))
         # A = acfMed(profilePart)
 
-        IWContainer[j] = devFunc(profile[0:i])
+        # IWContainer[j] = devFunc(profile[0:i])
+        IWContainer[j] = devFunc(profilePart)
         
         if method.lower() in ['hurst']:
             # A = np.std(profilePart)*np.sqrt(2*(1-A))
             A = IWContainer[j]*np.sqrt(2*(1-A))
+
         AContainer[0:len(A), j] = A
     return AContainer, IWContainer
 
@@ -255,6 +490,14 @@ def oneOverExp(delta, A, *args, **kwargs):
     Return:
     It returns a value of the correlation length.
     """
+    nInterp = 200
+    
+    # nFitA = 3
+    
+    # A = A[~np.isnan(A)]
+    # X = delta*np.linspace(0, len(A) - 1, len(A))
+    # X, A = fitData(delta, X, A, interpPoints=int(nFitA*len(A)))
+    # delta = delta/nFitA
     
     loc = np.where(np.round(A, 4) == np.round(1/2.718, 4))
     if len(loc[0]) == 0:
@@ -262,18 +505,16 @@ def oneOverExp(delta, A, *args, **kwargs):
         if len(loc[0]) != 0:
             pos = loc[0][-1]
             x = delta*np.linspace(pos, pos+1, 2)
-            xInt = delta*np.linspace(pos, pos+1, 100)
+            xInt = delta*np.linspace(pos, pos+1, nInterp)
             AInt = np.interp(xInt, x, A[pos:pos+2])
             loc=np.where(AInt <= np.round(1/2.718, 4))
-            return delta*(pos+((loc[0][0])/100))
+            return delta*(pos+((loc[0][0])/nInterp))
         else:
             return np.nan
     else:
         return delta*loc[0][-1]
 
-    
-def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
-                       max_iter=1000, alpha=0.01, cut_off=0.45, *args, **kwargs):
+def selfAffineExponent(delta, H, *args, **kwargs):
     """
     Description:
     This function estimates the self-affine exponent.
@@ -296,35 +537,78 @@ def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
     """
     H = H[~np.isnan(H)]
     if len(H) != 0:
-        # Find where to cut the curve and cut it.
-        pos = np.where(H >= cut_off*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
+        X = delta*np.linspace(0, len(H) - 1, len(H))
+        # X, H = fitData(delta, X, H, interpPoints=4*len(H))
+        X, H = fitData(delta, X, H, interpPoints=2*len(H))
+        
+        pos=np.where(H >= .8*0.7943)
+        # pos=np.where(H >= .85*0.7943)
+        
         H = H[0:pos[0][1]]
-        # Generate the length scale
-        X = delta*np.linspace(0, len(H), len(H))
-    
+        
+        X = delta*np.linspace(0, len(H) - 1, len(H))
+        
         # X, X_test, H, y_test = train_test_split(X, H,shuffle=True,
         #                                         test_size=0.2)
 
         popt, pcov = curve_fit(powerlaw, X, H, (0.1, 0.5))
-        # popt, pcov = curve_fit(exponentialModel, X, H, (0.1, 0.5))
-        if pcov[0][0] == np.inf:
-            return np.nan
-        else:
-            return popt[1]
-
-        # The next part is under development. Robust fitting of alpha.
-
-        # if robust is True:
-        #     try:
-        #         reg = HuberRegressor(epsilon=epsilon, max_iter=max_iter, alpha=alpha, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H))
-        #     except ValueError:
-        #         reg = LinearRegression(n_jobs=1, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H)) 
-        # else:
-        #     reg = LinearRegression(n_jobs=1, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H))
-
-        # return reg.coef_[0]
+        return popt[1]
     else:
         return np.nan
+
+# def selfAffineExponent(delta, H, robust=True, epsilon=1.05,
+#                        max_iter=1000, alpha=0.01, cut_off=0.45, *args, **kwargs):
+#     """
+#     Description:
+#     This function estimates the self-affine exponent.
+
+#     Parameters:
+#     :delta is equal to discretization. It is determined as delta = L/n
+#     where, L is profile's length and n is a number of points.
+#     :H is the normalised Hurst function. It should have a
+#     form of an one-dimensional array.
+#     :robust uses HuberRegressor for fitting if True; otherwise,
+#     it uses ordinary least squares.
+
+#     The next parameters are valid only for the robust implementation.
+#     :epsilon is
+#     :max_iter is
+#     :alpha is
+
+#     Return:
+#     It returns a value of the self-affine exponent.    
+#     """
+#     H = H[~np.isnan(H)]
+#     if len(H) != 0:
+#         # Find where to cut the curve and cut it.
+#         pos = np.where(H >= cut_off*0.7943) # pos = np.where(H >= np.sqrt(1-1/2.71))
+#         H = H[0:pos[0][1]]
+#         # Generate the length scale
+#         X = delta*np.linspace(0, len(H), len(H))
+    
+#         # X, X_test, H, y_test = train_test_split(X, H,shuffle=True,
+#         #                                         test_size=0.2)
+
+#         popt, pcov = curve_fit(powerlaw, X, H, (0.1, 0.5))
+#         # popt, pcov = curve_fit(exponentialModel, X, H, (0.1, 0.5))
+#         if pcov[0][0] == np.inf:
+#             return np.nan
+#         else:
+#             return popt[1]
+
+#         # The next part is under development. Robust fitting of alpha.
+
+#         # if robust is True:
+#         #     try:
+#         #         reg = HuberRegressor(epsilon=epsilon, max_iter=max_iter, alpha=alpha, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H))
+#         #     except ValueError:
+#         #         reg = LinearRegression(n_jobs=1, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H)) 
+#         # else:
+#         #     reg = LinearRegression(n_jobs=1, fit_intercept=True).fit(np.log(X.reshape(-1,1)), np.log(H))
+
+#         # return reg.coef_[0]
+#     else:
+#         return np.nan
     
 def fitData(delta, X, Y, interpPoints=100):
     """
@@ -396,6 +680,8 @@ def exponentialFitSAE(delta, A, *args, **kwargs):
         return np.nan
     
 # Developed
+def Range(profile):
+    return np.max(profile) - np.min(profile)
     
 def acfMed(profile, nlags=None):
     """
@@ -507,7 +793,9 @@ def subtractTrend(size, Profiles, method='SVR', test_size=0.7):
         profile = Profiles[:, i]
         profile = profile[~np.isnan(profile)]
         if method.lower() in ['gauss', 'gaussian', 'gaussian_filter']:
-            profileWT = profile - gaussian_filter1d(profile, sigma=size)
+            profileWT = profile - gaussian_filter1d(profile, sigma=size, mode='nearest')
+        elif method.lower() in ['med', 'median', 'median_filter']:
+            profileWT = profile - median_filter(profile, size=size, mode='nearest')
         else:
             profileWT = profile - SVRTrend(profile, method, test_size)
 
@@ -529,16 +817,25 @@ def SVRTrend(profile, method="SVR", test_size=0.7):
     :SRegr.predict(X) returns the profile's trend.
     """
     X = np.linspace(0, len(profile) -1, len(profile))#.reshape(-1, 1)
+    # X = np.linspace(0, len(profile) -1, len(profile)).reshape(-1, 1)
     X_train, X_test, y_train, y_test = train_test_split(X, profile,
                                                         shuffle=True, test_size=test_size)
 
     if method.lower() in ['svr']:
         SRegr = SVR(kernel='rbf')
-        SRegr.fit(X_train, y_train)
-        y = SRegr.predict(X)
+        # SRegr = LinearRegression(n_jobs=-1)
+        SRegr.fit(X_train.reshape(-1, 1), y_train)
+        y = SRegr.predict(X.reshape(-1, 1))
+
+    elif method.lower() in ['linear', 'lin']:
+        SRegr = LinearRegression(n_jobs=-1)
+        SRegr.fit(X_train.reshape(-1, 1), y_train)
+        y = SRegr.predict(X.reshape(-1, 1))
+        
     else:
-        BIC = model_selection(X_train, X_test, y_train, y_test, range(1, 4))
-        n = min(BIC, key=BIC.get)
+        # BIC = model_selection(X_train, X_test, y_train, y_test, range(1, 4))
+        # n = min(BIC, key=BIC.get)
+        n = 1
         SRegr = pw(X_train, y_train, n_breakpoints=n if n.is_integer() else 1)
         y = SRegr.predict(X)
 
@@ -720,3 +1017,45 @@ def errorRel(val, refVal):
     """
     return np.abs(val - refVal)/refVal
     
+def systematicErrorXi(B, xi):
+    """
+    Description:
+    This function estimates the systematic error of the xi's estimator.
+
+    Parameters:
+    :B is an independent number of points in a correlated system.
+    :xi is the value of the lateral correlation length.
+
+    Return:
+    It returns absolute value of the systematic error.
+    """
+    return xi*10/6*(np.sqrt(1/B) - 0.05)
+
+def systematicErrorAlpha(B, alpha):
+    """
+    Description:
+    This function estimates the systematic error of the alpha's estimator.
+
+    Parameters:
+    :B is an independent number of points in a correlated system.
+    :alpha is the value of the self-affine exponent.
+
+    Return:
+    It returns absolute value of the systematic error. (E_{
+    alpha}^* + E_{\alpha}^s)
+    """
+    return alpha*(10/46*(np.sqrt(1/B) - 0.06) + 0.1)
+
+def fullError(systematicError, randomError):
+    """
+    Description:
+    This function estimates the full error.
+
+    Parameters:
+    :systematicError is the systematic error of an estimator.
+    :randomError is the random error of an estimator.
+
+    Return:
+    It returns the full error of the estimator.
+    """
+    return np.sqrt(np.power(systematicError, 2) + np.power(randomError, 2))
