@@ -1,14 +1,6 @@
 # corrpy
-CorrPy is a Python library for analysis of irregular profiles and surfaces.
 
-Requirements:
 
-numpy
+<p><strong>CorrPy is a Python library for analysis of irregular profiles and surfaces.</strong></p>
 
-scipy
-
-sklearn
-
-statsmodels
-
-sksparse
+<p> <strong>A list of required packages and conde environment coud be found at: </strong> https://github.com/AlKukharskii/environments</p>
