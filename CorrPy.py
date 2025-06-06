@@ -4,6 +4,7 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view as slidingWindow
 
 from statsmodels.tsa.stattools import acf
+from statsmodels.tsa.stattools import adfuller
 
 from scipy.stats import median_abs_deviation as mad
 from scipy.ndimage import gaussian_filter1d, median_filter
@@ -193,6 +194,57 @@ def loopOverProfileMW(step, deltaMin, deltaMax, profile, method='acf', deviation
             AContainer[0:len(A), indxDelta, indxFrame] = A
     
     return AContainer, IWContainer
+
+
+
+def MWSingle(Profiles, step, delta):
+    step /= delta
+    step = int(step)
+    lengthIn = step + 1
+
+    l, N = Profiles.shape
+
+    xiLst = np.full((l, N), np.nan)
+    iwLst = np.full((l, N), np.nan)
+    # alphaLst = np.full((5000, 90), np.nan)
+        
+    for i in range(N): # Iterate over profiles
+        A, IW = loopOverProfileMW(step=1, deltaMin=step, deltaMax=lengthIn, profile=Profiles[:, i], method='acf', deviation='mad') #Input in points
+    
+        if not np.sum(~np.isnan(A)):
+            continue
+
+        # H = np.sqrt(1 - A)
+        try:
+            xi = correlationLength(delta, A)
+            # alpha = selfAffineParameters(delta, np.sqrt(1 - A), 'exponent', robust=False, cut_off=0.5)
+            xiLst[0:xi.shape[1], i] = xi
+            iwLst[0:xi.shape[1], i] = IW
+        except:
+            pass
+            # xi = xi#np.full([2, 1], np.nan)
+
+        # xiLst[0:xi.shape[1], i] = xi
+        # iwLst[0:xi.shape[1], i] = IW
+        # alphaLst[0:xi.shape[1], i] = alpha
+
+    else:
+        xiMed = np.nanmedian(xiLst,1)
+        xiMAD = const*mad(xiLst, 1, nan_policy='omit')
+
+        iwMed = np.nanmedian(iwLst,1)
+        iwMAD = const*mad(iwLst, 1, nan_policy='omit')
+
+
+        x = delta*np.linspace(0, xiMed.shape[0]-1, xiMed.shape[0]) + (step*delta)
+
+
+        BMed = step*delta/xiMed
+
+        # Calculate errors
+        sysXiError = systematicErrorXi(BMed, xiMed)
+        xiErr = fullError(sysXiError, const*xiMAD/np.sqrt(Profiles.shape[1]))
+    return x, xiMed, xiErr, xiMAD, iwMed, iwMAD
 
 
 def MovingWindow(step, deltaMin, deltaMax, Profiles, delta=1, method='acf', deviation='std'):
@@ -539,7 +591,7 @@ def selfAffineExponent(delta, H, *args, **kwargs):
     if len(H) != 0:
         X = delta*np.linspace(0, len(H) - 1, len(H))
         # X, H = fitData(delta, X, H, interpPoints=4*len(H))
-        X, H = fitData(delta, X, H, interpPoints=2*len(H))
+        # X, H = fitData(delta, X, H, interpPoints=2*len(H))
         
         pos=np.where(H >= .8*0.7943)
         # pos=np.where(H >= .85*0.7943)
@@ -552,7 +604,7 @@ def selfAffineExponent(delta, H, *args, **kwargs):
         #                                         test_size=0.2)
 
         popt, pcov = curve_fit(powerlaw, X, H, (0.1, 0.5))
-        return popt[1]
+        return popt[1]/correctionFactor(0.8)
     else:
         return np.nan
 
@@ -1041,10 +1093,9 @@ def systematicErrorAlpha(B, alpha):
     :alpha is the value of the self-affine exponent.
 
     Return:
-    It returns absolute value of the systematic error. (E_{
-    alpha}^* + E_{\alpha}^s)
+    It returns absolute value of the systematic error.
     """
-    return alpha*(10/46*(np.sqrt(1/B) - 0.06) + 0.1)
+    return alpha*10/53*(np.sqrt(1/B) - 0.06)
 
 def fullError(systematicError, randomError):
     """
@@ -1059,3 +1110,73 @@ def fullError(systematicError, randomError):
     It returns the full error of the estimator.
     """
     return np.sqrt(np.power(systematicError, 2) + np.power(randomError, 2))
+
+def correctionFactor(psi=0.8):
+    return -0.187*psi**2.312 + 1
+
+# def test(*args, **kwargs):
+#     x = np.linspace(0,5000,5000)
+#     LengthLst = range(20, 120, 20)
+
+#     # Add alpha
+
+#     XI = []
+#     XIMAD = []
+#     ALPHA = []
+#     ALPHAMAD = []
+
+#     for step in LengthLst:
+#         # print(step)
+#         lengthIn = step + 1 
+
+#         xiLst = np.full((5000, N), np.nan)
+#         # alphaLst = np.full((5000, N), np.nan)
+        
+#         for i in range(0, N): # Iterate over profiles
+#             # A, IW = cp.loopOverProfileMW(step=1, deltaMin=step, deltaMax=lengthIn, profile=PWT[:, i], method='acf', deviation='std')
+#             A, IW = cp.loopOverProfileMWLIN(step=1, deltaMin=step, deltaMax=lengthIn, profile=PWT[:, i], method='acf', deviation='std')
+            
+#             if not np.sum(~np.isnan(A)):
+#                 # print('Profile length is less than delta.')
+#                 continue
+
+#             # H = np.sqrt(1 - A)
+
+#             xi = cp.correlationLength(deltaIn, A)
+#             # alpha = cp.selfAffineParameters(deltaIn, np.sqrt(1 - A), 'exponent', robust=False, cut_off=0.5)
+
+#             xiLst[0:xi.shape[1], i] = xi
+#             # alphaLst[0:xi.shape[1], i] = alpha
+
+#         else:
+#             xiMed = np.nanmedian(xiLst,1)
+#             xiMAD = const*cp.mad(xiLst, 1, nan_policy='omit')
+
+#             # alphaMed = np.nanmedian(alphaLst,1)
+#             # alphaMAD = const*cp.mad(alphaLst, 1, nan_policy='omit')
+
+#         XI.append(np.nanmedian(xiMed))
+#         XIMAD.append(np.nanmedian(xiMAD))
+
+#         # ALPHA.append(np.nanmedian(alphaMed))
+#         # ALPHAMAD.append(np.nanmedian(alphaMAD))
+
+def diffLoop(Profiles):
+    Profiles_diff = np.full_like(Profiles, np.nan)
+    for indx in range(Profiles.shape[1]):
+        profile = Profiles[:, indx]
+        profile = profile[~np.isnan(profile)]
+        res = np.diff(profile)
+        Profiles_diff[0 : len(res), indx] = res
+    return Profiles_diff
+
+def testAdfuller(Profiles):
+    pValLst = []
+    critVal = []
+    for indx in range(Profiles.shape[1]):
+        profile = Profiles[:, indx]
+        profile = profile[~np.isnan(profile)]
+        res = adfuller(profile, regression='ct')
+        pValLst.append(res[1])
+        critVal.append(True if res[0] < res[4]['1%'] else False)
+    return pValLst, critVal
